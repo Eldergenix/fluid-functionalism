@@ -1086,8 +1086,14 @@ function ColorTile({ color, size = 24, className, style }: ColorTileProps) {
 // ---------------------------------------------------------------------------
 
 const ColorSwatch = forwardRef<HTMLButtonElement, ColorSwatchProps>(
-  ({ color, size = 28, selected, className, ...props }, ref) => {
+  ({ color, size = 28, selected, className, onMouseEnter, onMouseLeave, ...props }, ref) => {
     const shape = useShape();
+    const [hovered, setHovered] = useState(false);
+    const ring = selected
+      ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px #6B97FF"
+      : hovered
+        ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px rgba(127,127,127,0.4)"
+        : "inset 0 0 0 1px rgba(127,127,127,0.25)";
     return (
       <button
         ref={ref}
@@ -1102,10 +1108,10 @@ const ColorSwatch = forwardRef<HTMLButtonElement, ColorSwatchProps>(
           width: size,
           height: size,
           ...CHECKER_BG,
-          boxShadow: selected
-            ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px #6B97FF"
-            : "inset 0 0 0 1px rgba(127,127,127,0.25)",
+          boxShadow: ring,
         }}
+        onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e); }}
+        onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}
         {...props}
       >
         <span
@@ -1138,7 +1144,7 @@ function SwatchStrip({
   }, [current]);
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-2">
       {swatches.map((sw, i) => {
         const parsed = parseColor(sw);
         const normalized = parsed
@@ -1534,6 +1540,7 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+    const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null);
     const [rect, setRect] = useState<DOMRect | null>(null);
     const shape = useShape();
 
@@ -1550,11 +1557,22 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
     );
 
     useEffect(() => {
-      if (open && triggerRef.current) {
-        setRect(triggerRef.current.getBoundingClientRect());
-      } else {
+      if (!open || !triggerRef.current) {
         setRect(null);
+        return;
       }
+      const update = () => {
+        if (triggerRef.current) {
+          setRect(triggerRef.current.getBoundingClientRect());
+        }
+      };
+      update();
+      window.addEventListener("scroll", update, { passive: true, capture: true });
+      window.addEventListener("resize", update);
+      return () => {
+        window.removeEventListener("scroll", update, { capture: true } as EventListenerOptions);
+        window.removeEventListener("resize", update);
+      };
     }, [open]);
 
     useEffect(() => {
@@ -1651,22 +1669,27 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
           >
             <AnimatePresence>
               <motion.div
-                ref={panelRef}
+                ref={(node) => {
+                  (panelRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+                  setPanelEl(node);
+                }}
                 initial={{ opacity: 0, y: -4, scaleY: 0.96 }}
                 animate={{ opacity: 1, y: 0, scaleY: 1 }}
                 exit={{ opacity: 0, y: -4, scaleY: 0.96 }}
                 transition={springs.moderate}
                 style={{ transformOrigin: "top left" }}
               >
-                <ColorPicker
-                  {...pickerProps}
-                  value={currentValue}
-                  onValueChange={onValueChange}
-                  className={cn(
-                    "shadow-[0_4px_12px_rgba(0,0,0,0.02)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]",
-                    pickerProps.className
-                  )}
-                />
+                <ColorPickerPortalContainer value={panelEl}>
+                  <ColorPicker
+                    {...pickerProps}
+                    value={currentValue}
+                    onValueChange={onValueChange}
+                    className={cn(
+                      "shadow-[0_4px_12px_rgba(0,0,0,0.02)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]",
+                      pickerProps.className
+                    )}
+                  />
+                </ColorPickerPortalContainer>
               </motion.div>
             </AnimatePresence>
           </div>,
