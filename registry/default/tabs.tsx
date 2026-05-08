@@ -287,7 +287,7 @@ const TabsList = forwardRef<HTMLDivElement, TabsListProps>(
           {selectedRect && (
             <motion.div
               className={cn(
-                "absolute pointer-events-none bg-background shadow-surface-2",
+                "absolute pointer-events-none bg-card shadow-surface-3",
                 shape.bg
               )}
               initial={false}
