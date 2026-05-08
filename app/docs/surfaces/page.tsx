@@ -66,22 +66,14 @@ function NestedSurfaces({ substrate, layers }: { substrate: number; layers: numb
 }
 
 function Playground() {
-  const [substrate, setSubstrate] = useState<number>(1);
-  const [layers, setLayers] = useState<number>(2);
-  const maxLayers = 8 - substrate;
-
-  const handleSubstrate = (v: number | [number, number]) => {
-    const next = Array.isArray(v) ? v[0] : v;
-    setSubstrate(next);
-    setLayers((prev) => Math.min(prev, 8 - next));
-  };
-
-  const handleLayers = (v: number | [number, number]) => {
-    const next = Array.isArray(v) ? v[0] : v;
-    setLayers(Math.min(next, maxLayers));
-  };
-
+  const [range, setRange] = useState<[number, number]>([1, 3]);
+  const [from, to] = range;
+  const layers = to - from;
   const shape = useShape();
+
+  const handleRange = (v: number | [number, number]) => {
+    if (Array.isArray(v)) setRange(v);
+  };
 
   return (
     <div className={`flex flex-col w-full border border-border/60 overflow-hidden ${shape.container}`}>
@@ -89,60 +81,32 @@ function Playground() {
         className="flex items-center justify-center px-8 py-16 min-h-[320px]"
         style={{ backgroundColor: "var(--surface-1)" }}
       >
-        <NestedSurfaces substrate={substrate} layers={layers} />
+        <NestedSurfaces substrate={from} layers={layers} />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 px-8 py-6 border-t border-border/60 bg-muted/30">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <span
-              className="text-[13px] text-foreground"
-              style={{ fontVariationSettings: fontWeights.semibold }}
-            >
-              Sits on
-            </span>
-            <span className="text-[12px] text-muted-foreground font-mono">
-              surface-{substrate}
-            </span>
-          </div>
-          <Slider
-            value={substrate}
-            onChange={handleSubstrate}
-            min={1}
-            max={8}
-            step={1}
-            aria-label="Surface this stack sits on"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground/60 font-mono px-0.5">
-            {LEVELS.map((l) => (
-              <span key={l}>{l}</span>
-            ))}
-          </div>
+      <div className="flex flex-col gap-3 px-8 py-6 border-t border-border/60 bg-muted/30">
+        <div className="flex items-baseline justify-between gap-4">
+          <span
+            className="text-[13px] text-foreground"
+            style={{ fontVariationSettings: fontWeights.semibold }}
+          >
+            Stacks
+          </span>
+          <span className="text-[12px] text-muted-foreground font-mono">
+            surface-{from} → surface-{to}
+          </span>
         </div>
-        <div className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <span
-              className="text-[13px] text-foreground"
-              style={{ fontVariationSettings: fontWeights.semibold }}
-            >
-              Stacks
-            </span>
-            <span className="text-[12px] text-muted-foreground font-mono">
-              {layers} {layers === 1 ? "level" : "levels"} → surface-{substrate + layers}
-            </span>
-          </div>
-          <Slider
-            value={layers}
-            onChange={handleLayers}
-            min={0}
-            max={maxLayers}
-            step={1}
-            aria-label="Number of levels stacked on top"
-          />
-          <div className="flex justify-between text-[10px] text-muted-foreground/60 font-mono px-0.5">
-            {Array.from({ length: maxLayers + 1 }, (_, i) => (
-              <span key={i}>{i}</span>
-            ))}
-          </div>
+        <Slider
+          value={range}
+          onChange={handleRange}
+          min={1}
+          max={8}
+          step={1}
+          aria-label="Bottom and top of the surface stack"
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground/60 font-mono px-0.5">
+          {LEVELS.map((l) => (
+            <span key={l}>{l}</span>
+          ))}
         </div>
       </div>
     </div>
