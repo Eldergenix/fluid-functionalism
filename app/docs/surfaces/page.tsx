@@ -32,8 +32,19 @@ const ALIASES: Record<number, string | null> = {
   8: null,
 };
 
+const SURFACE_CLASSES: Record<number, string> = {
+  1: "bg-surface-1 shadow-surface-1",
+  2: "bg-surface-2 shadow-surface-2",
+  3: "bg-surface-3 shadow-surface-3",
+  4: "bg-surface-4 shadow-surface-4",
+  5: "bg-surface-5 shadow-surface-5",
+  6: "bg-surface-6 shadow-surface-6",
+  7: "bg-surface-7 shadow-surface-7",
+  8: "bg-surface-8 shadow-surface-8",
+};
+
 function surfaceClass(level: number) {
-  return `bg-surface-${level} shadow-surface-${level}` as const;
+  return SURFACE_CLASSES[level];
 }
 
 function PlaygroundCard({ level }: { level: number }) {
