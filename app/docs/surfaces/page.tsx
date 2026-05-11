@@ -8,7 +8,7 @@ import { useShape } from "@/registry/default/lib/shape-context";
 import { SurfaceProvider } from "@/registry/default/lib/surface-context";
 import { Dropdown } from "@/registry/default/dropdown";
 import { MenuItem } from "@/registry/default/menu-item";
-import { ColorPickerPopover } from "@/registry/default/color-picker";
+import { ColorPicker, ColorPickerPortalContainer } from "@/registry/default/color-picker";
 import { useIcon } from "@/registry/default/lib/icon-context";
 import { useThemeContext } from "@/registry/default/lib/theme-context";
 import { BentoCard } from "@/app/components/bento-card";
@@ -316,14 +316,15 @@ function ThemedColumn({ theme, children }: { theme: "dark" | "light"; children: 
 }
 
 function ColorPickerDemo() {
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
   return (
-    <div className="dark bento-card-border border bg-background rounded-2xl p-8 flex items-start justify-center min-h-[700px] pointer-events-none">
-      <ColorPickerPopover
-        triggerLabel="Fill"
-        defaultValue="#FF6B35"
-        open
-        formatOpen
-      />
+    <div
+      ref={setContainerEl}
+      className="dark relative bento-card-border border bg-background rounded-2xl p-12 flex items-start justify-center min-h-[560px] pointer-events-none"
+    >
+      <ColorPickerPortalContainer value={containerEl}>
+        <ColorPicker defaultValue="#FF6B35" formatOpen />
+      </ColorPickerPortalContainer>
     </div>
   );
 }
