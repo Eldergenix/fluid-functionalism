@@ -470,7 +470,7 @@ const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
             }}
             onKeyDown={handleKeyDown}
             className={cn(
-              `relative flex flex-col gap-0.5 max-h-[300px] overflow-y-auto ${shape.container} ${surfaceClasses(level)} p-1 select-none outline-none`,
+              `relative flex flex-col gap-0.5 max-h-[300px] overflow-y-auto ${shape.container} ${surfaceClasses(level, 3)} p-1 select-none outline-none`,
               className
             )}
           >

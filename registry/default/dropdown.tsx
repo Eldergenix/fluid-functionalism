@@ -118,7 +118,7 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
           }}
           role="menu"
           className={cn(
-            `relative flex flex-col gap-0.5 w-72 max-w-full ${shape.container} ${surfaceClasses(level)} p-1 select-none`,
+            `relative flex flex-col gap-0.5 w-72 max-w-full ${shape.container} ${surfaceClasses(level, 3)} p-1 select-none`,
             className
           )}
           {...props}

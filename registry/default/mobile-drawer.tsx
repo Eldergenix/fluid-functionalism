@@ -135,7 +135,7 @@ export function MobileDrawer({
             aria-modal="true"
             aria-label="Navigation"
             tabIndex={-1}
-            className={`fixed top-0 left-0 bottom-0 w-64 ${surfaceClasses(level)} z-50 overflow-y-auto p-4`}
+            className={`fixed top-0 left-0 bottom-0 w-64 ${surfaceClasses(level, 3)} z-50 overflow-y-auto p-4`}
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%", transition: { duration: 0.12 } }}

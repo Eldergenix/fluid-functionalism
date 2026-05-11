@@ -1690,7 +1690,7 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
                       value={currentValue}
                       onValueChange={onValueChange}
                       className={cn(
-                        surfaceClasses(level),
+                        surfaceClasses(level, 3),
                         pickerProps.className
                       )}
                     />
