@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  createContext,
   forwardRef,
+  useContext,
   useRef,
   useState,
   useEffect,
@@ -17,15 +19,36 @@ import { cn } from "@/lib/utils";
 import { springs } from "@/lib/springs";
 import { fontWeights } from "@/lib/font-weight";
 import { useShape } from "@/lib/shape-context";
+import { useSurface, SurfaceProvider } from "@/lib/surface-context";
+import { surfaceClasses } from "@/lib/surface-classes";
 import { useIcon } from "@/lib/icon-context";
 import { Slider } from "@/registry/default/slider";
 import { Dropdown, useDropdown } from "@/registry/default/dropdown";
+import { Tooltip } from "@/registry/default/tooltip";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type ColorFormat = "hex" | "rgb" | "hsl" | "oklch";
+
+// Allows consumers (e.g. the /demo carousel) to portal popups inside a
+// CSS-scaled ancestor so menu/popover layers visually scale with the picker.
+const ColorPickerPortalContainerContext = createContext<HTMLElement | null>(null);
+
+function ColorPickerPortalContainer({
+  value,
+  children,
+}: {
+  value: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return (
+    <ColorPickerPortalContainerContext.Provider value={value}>
+      {children}
+    </ColorPickerPortalContainerContext.Provider>
+  );
+}
 
 interface ParsedColor {
   // HSV (canonical, 0..360 / 0..1 / 0..1)
@@ -54,6 +77,11 @@ interface ColorPickerProps
   onFormatChange?: (format: ColorFormat) => void;
   swatches?: string[];
   hideEyedropper?: boolean;
+  /** Controls the format dropdown's open state. When provided, the dropdown
+   *  is fully controlled and ignores user toggles. */
+  formatOpen?: boolean;
+  /** Initial open state for the format dropdown (uncontrolled). */
+  defaultFormatOpen?: boolean;
 }
 
 interface ColorPickerPopoverProps extends ColorPickerProps {
@@ -63,6 +91,13 @@ interface ColorPickerPopoverProps extends ColorPickerProps {
   triggerShowRemove?: boolean;
   onTriggerRemove?: () => void;
   triggerClassName?: string;
+  /** Controls the popover's open state. When provided, the popover is fully
+   *  controlled and ignores trigger clicks. */
+  open?: boolean;
+  /** Initial open state for the popover (uncontrolled). */
+  defaultOpen?: boolean;
+  /** Called when the open state would change (fires even when controlled). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface ColorSwatchProps
@@ -341,7 +376,7 @@ const PANEL_WIDTH = 280;
 const SQUARE_HEIGHT = 156;
 const CHECKER_BG: CSSProperties = {
   backgroundImage:
-    "conic-gradient(#bbb 0 25%, #fff 0 50%, #bbb 0 75%, #fff 0)",
+    "conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%, var(--checker-a) 0 75%, var(--checker-b) 0)",
   backgroundSize: "8px 8px",
 };
 
@@ -450,15 +485,23 @@ function SaturationSquare({ h, s, v, onChange }: SaturationSquareProps) {
       onPointerUp={onPointerUp}
       onKeyDown={onKeyDown}
       className={cn(
-        "relative w-full select-none touch-none cursor-none overflow-hidden outline-none",
+        "relative w-full select-none touch-none cursor-none outline-none",
         shape.bg
       )}
       style={{
         height: SQUARE_HEIGHT,
-        background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`,
         boxShadow: focused ? "0 0 0 2px #6B97FF" : undefined,
       }}
     >
+      <div
+        className={cn(
+          "absolute inset-0 overflow-hidden",
+          shape.bg === "rounded-[20px]" ? "rounded-2xl" : shape.bg
+        )}
+        style={{
+          background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`,
+        }}
+      />
       <motion.div
         className="absolute pointer-events-none rounded-full"
         initial={false}
@@ -555,9 +598,9 @@ function AlphaSlider({
       thumbColor={solidColor}
       thumbBorderColor="rgba(255,255,255,0.9)"
       trackStyle={{
-        backgroundImage: `linear-gradient(to right, ${transparentColor} 0%, ${solidColor} 98%), conic-gradient(#bbb 0 25%, #fff 0 50%, #bbb 0 75%, #fff 0)`,
+        backgroundImage: `linear-gradient(to right, ${transparentColor} 0%, ${solidColor} 98%), conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%, var(--checker-a) 0 75%, var(--checker-b) 0)`,
         backgroundSize: "100% 100%, 8px 8px",
-        borderColor: "transparent",
+        borderWidth: 0,
       }}
       aria-label="Alpha"
     />
@@ -629,23 +672,58 @@ function FormatItem({
 function FormatDropdown({
   value,
   onChange,
+  open: openProp,
+  defaultOpen = false,
 }: {
   value: ColorFormat;
   onChange: (f: ColorFormat) => void;
+  open?: boolean;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen: (next: boolean | ((prev: boolean) => boolean)) => void = (next) => {
+    if (isControlled) return;
+    setInternalOpen(next);
+  };
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const shape = useShape();
-  const [rect, setRect] = useState<DOMRect | null>(null);
+  const portalContainer = useContext(ColorPickerPortalContainerContext);
+  const [pos, setPos] = useState<
+    | { mode: "fixed"; top: number; left: number; width: number }
+    | { mode: "absolute"; top: number; left: number; width: number }
+    | null
+  >(null);
 
   useEffect(() => {
-    if (open && triggerRef.current) {
-      setRect(triggerRef.current.getBoundingClientRect());
-    } else {
-      setRect(null);
+    if (!open || !triggerRef.current) {
+      setPos(null);
+      return;
     }
-  }, [open]);
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    if (portalContainer) {
+      const cRect = portalContainer.getBoundingClientRect();
+      const cWidth = portalContainer.offsetWidth;
+      const scale = cWidth > 0 ? cRect.width / cWidth : 1;
+      // Convert viewport coords into the portal container's pre-scale frame so
+      // an ancestor CSS scale visually scales the menu alongside the trigger.
+      setPos({
+        mode: "absolute",
+        top: (triggerRect.bottom - cRect.top) / scale + 6,
+        left: (triggerRect.left - cRect.left) / scale,
+        width: triggerRect.width / scale,
+      });
+    } else {
+      setPos({
+        mode: "fixed",
+        top: triggerRect.bottom + 6,
+        left: triggerRect.left,
+        width: triggerRect.width,
+      });
+    }
+  }, [open, portalContainer]);
 
   useEffect(() => {
     if (!open) return;
@@ -681,20 +759,28 @@ function FormatDropdown({
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          "flex items-center justify-between gap-2 h-9 px-3 text-[13px] text-foreground border border-border bg-transparent hover:bg-accent/40 transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
+          "flex items-center justify-between gap-2 h-9 px-3 text-[13px] bg-transparent hover:bg-hover hover:text-foreground transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
+          open ? "bg-active text-foreground" : "text-muted-foreground active:bg-active",
           shape.input
         )}
         style={{ fontVariationSettings: fontWeights.medium }}
       >
         <span>{FORMAT_LABELS[value]}</span>
-        <ChevronDownIcon size={14} strokeWidth={1.5} className="text-muted-foreground" />
+        <ChevronDownIcon
+          size={14}
+          strokeWidth={1.5}
+          className={cn(
+            "text-muted-foreground transition-transform duration-150",
+            open && "rotate-180"
+          )}
+        />
       </button>
-      {open && rect && typeof document !== "undefined" && createPortal(
+      {open && pos && typeof document !== "undefined" && createPortal(
         <div
           style={{
-            position: "fixed",
-            top: rect.bottom + 6,
-            left: rect.left,
+            position: pos.mode,
+            top: pos.top,
+            left: pos.left,
             zIndex: 60,
           }}
         >
@@ -703,7 +789,7 @@ function FormatDropdown({
             initial={{ opacity: 0, y: -4, scaleY: 0.96 }}
             animate={{ opacity: 1, y: 0, scaleY: 1 }}
             transition={springs.fast}
-            style={{ transformOrigin: "top center", minWidth: rect.width }}
+            style={{ transformOrigin: "top center", minWidth: pos.width }}
           >
             <Dropdown checkedIndex={checkedIdx} className="!w-auto min-w-full">
               {formats.map((fmt, i) => (
@@ -721,7 +807,7 @@ function FormatDropdown({
             </Dropdown>
           </motion.div>
         </div>,
-        document.body
+        portalContainer ?? document.body
       )}
     </>
   );
@@ -746,6 +832,10 @@ interface ColorInputProps {
   hasPercent?: boolean;
   decimals?: number;
   scrubbable?: boolean;
+  min?: number;
+  max?: number;
+  /** When true with min and max, wrap (modulo) instead of clamping. Used for angular values like hue. */
+  wrap?: boolean;
 }
 
 const ColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
@@ -765,6 +855,9 @@ const ColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
       hasPercent = false,
       decimals,
       scrubbable = false,
+      min,
+      max,
+      wrap = false,
     },
     ref
   ) => {
@@ -798,7 +891,15 @@ const ColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
       decimals != null ? n.toFixed(decimals) : String(Math.round(n));
 
     const commitNumber = (n: number) => {
-      const formatted = formatNumber(n);
+      let bounded = n;
+      if (wrap && min != null && max != null) {
+        const range = max - min;
+        bounded = ((bounded - min) % range + range) % range + min;
+      } else {
+        if (min != null) bounded = Math.max(min, bounded);
+        if (max != null) bounded = Math.min(max, bounded);
+      }
+      const formatted = formatNumber(bounded);
       const withSuffix = hasPercent ? `${formatted}%` : formatted;
       setDraft(withSuffix);
       onCommit(withSuffix);
@@ -870,7 +971,7 @@ const ColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
         onPointerUp={onWrapperPointerUp}
         onPointerCancel={onWrapperPointerUp}
         className={cn(
-          "flex items-center h-9 px-2 border border-border bg-transparent hover:bg-accent/60 active:bg-accent/80 transition-colors duration-80 focus-within:ring-1 focus-within:ring-[#6B97FF] select-none",
+          "flex items-center h-9 px-2 bg-transparent hover:bg-hover active:bg-active transition-colors duration-80 focus-within:ring-1 focus-within:ring-[#6B97FF] select-none",
           shape.input,
           scrubbable && !editing && "cursor-ew-resize",
           className
@@ -894,8 +995,14 @@ const ColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
           onBlur={() => {
             interactingRef.current = false;
             setEditing(false);
-            if (draft !== value) onCommit(draft);
-            else setDraft(value);
+            if (draft !== value) {
+              const numeric = parseFloat(draft.replace("%", ""));
+              if (!Number.isNaN(numeric) && (min != null || max != null)) {
+                commitNumber(numeric);
+              } else {
+                onCommit(draft);
+              }
+            } else setDraft(value);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -965,7 +1072,7 @@ function EyeDropperButton({ onPick }: { onPick: (hex: string) => void }) {
       onClick={handleClick}
       aria-label="Pick color from screen"
       className={cn(
-        "flex items-center justify-center h-9 px-3 text-foreground border border-border bg-transparent hover:bg-accent/40 transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
+        "flex items-center justify-center h-9 px-3 text-muted-foreground bg-transparent hover:bg-hover hover:text-foreground active:bg-active transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
         shape.input
       )}
     >
@@ -1011,8 +1118,14 @@ function ColorTile({ color, size = 24, className, style }: ColorTileProps) {
 // ---------------------------------------------------------------------------
 
 const ColorSwatch = forwardRef<HTMLButtonElement, ColorSwatchProps>(
-  ({ color, size = 28, selected, className, ...props }, ref) => {
+  ({ color, size = 28, selected, className, onMouseEnter, onMouseLeave, ...props }, ref) => {
     const shape = useShape();
+    const [hovered, setHovered] = useState(false);
+    const ring = selected
+      ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px #6B97FF"
+      : hovered
+        ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px rgba(127,127,127,0.4)"
+        : "inset 0 0 0 1px rgba(127,127,127,0.25)";
     return (
       <button
         ref={ref}
@@ -1027,10 +1140,10 @@ const ColorSwatch = forwardRef<HTMLButtonElement, ColorSwatchProps>(
           width: size,
           height: size,
           ...CHECKER_BG,
-          boxShadow: selected
-            ? "inset 0 0 0 1px rgba(127,127,127,0.25), 0 0 0 2px var(--background), 0 0 0 4px #6B97FF"
-            : "inset 0 0 0 1px rgba(127,127,127,0.25)",
+          boxShadow: ring,
         }}
+        onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e); }}
+        onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}
         {...props}
       >
         <span
@@ -1063,7 +1176,7 @@ function SwatchStrip({
   }, [current]);
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-2">
       {swatches.map((sw, i) => {
         const parsed = parseColor(sw);
         const normalized = parsed
@@ -1099,6 +1212,8 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
       onFormatChange,
       swatches,
       hideEyedropper,
+      formatOpen,
+      defaultFormatOpen,
       className,
       ...props
     },
@@ -1122,6 +1237,12 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
 
     const [hsv, setHsv] = useState(initialParsed);
 
+    // Sticky OKLCH hue: preserves the user's stated OKLCH H across the lossy
+    // RGB round-trip (so the displayed H doesn't drift after release) and
+    // across achromatic colors (where RGB-derived H would collapse to 0).
+    // Cleared whenever the color changes through a non-OKLCH-internal channel.
+    const oklchHueRef = useRef<number | null>(null);
+
     // External value sync — when controlled value changes from outside, sync HSV
     const lastEmittedRef = useRef<string>("");
     useEffect(() => {
@@ -1131,6 +1252,7 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
       if (cur === emitted) return;
       const p = parseColor(cur);
       if (!p) return;
+      oklchHueRef.current = null;
       const newHsv = rgbToHsv(p.r, p.g, p.b);
       setHsv((prev) => ({
         h: newHsv.s === 0 ? prev.h : newHsv.h,
@@ -1175,6 +1297,7 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
       (input: string) => {
         const p = parseColor(input);
         if (!p) return;
+        oklchHueRef.current = null;
         const newHsv = rgbToHsv(p.r, p.g, p.b);
         const merged = {
           h: newHsv.s === 0 ? hsv.h : newHsv.h,
@@ -1212,11 +1335,18 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
     const solidB = Math.round(solidHueRgb.b);
     const solidColorString = `rgb(${solidR}, ${solidG}, ${solidB})`;
     const shape = useShape();
+    const substrate = useSurface();
+    // The picker panel uses bg-card (surface-3) by default; when wrapped in
+    // ColorPickerPopover the className override pushes it higher. Either way,
+    // announce the panel's effective level so descendants (FormatDropdown,
+    // etc.) elevate above it instead of colliding at the same surface.
+    const pickerLevel = Math.max(substrate, 3);
 
     return (
+      <SurfaceProvider value={pickerLevel}>
       <div
         ref={ref}
-        className={cn("flex flex-col gap-2 p-3 bg-card border border-border/60", shape.container, className)}
+        className={cn("flex flex-col gap-2 p-3 bg-card shadow-surface-1", shape.container, className)}
         style={{ width: PANEL_WIDTH }}
         {...props}
       >
@@ -1227,8 +1357,8 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
           onChange={(s, v) => updateHsv({ s, v })}
         />
 
-        <div className="flex flex-col -my-1">
-          <HueSlider h={hsv.h} onChange={(h) => updateHsv({ h })} />
+        <div className="flex flex-col [&>*]:mb-0 [&>*+*]:-mt-px">
+          <HueSlider h={hsv.h} onChange={(h) => { oklchHueRef.current = null; updateHsv({ h }); }} />
           <AlphaSlider
             a={hsv.a}
             solidColor={solidColorString}
@@ -1240,18 +1370,25 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <FormatDropdown value={currentFormat} onChange={handleFormatChange} />
+          <FormatDropdown
+            value={currentFormat}
+            onChange={handleFormatChange}
+            open={formatOpen}
+            defaultOpen={defaultFormatOpen}
+          />
           {!hideEyedropper && <EyeDropperButton onPick={handleEyedrop} />}
         </div>
 
         <ColorInputsRow
           parsed={parsed}
           format={currentFormat}
+          oklchHue={oklchHueRef.current}
           onChannelChange={(channel, value) => {
             const p = { ...parsed };
             switch (channel) {
               case "hex": handleHexCommit(value as string); return;
               case "r": case "g": case "b": {
+                oklchHueRef.current = null;
                 const r = channel === "r" ? Number(value) : p.r;
                 const g = channel === "g" ? Number(value) : p.g;
                 const b = channel === "b" ? Number(value) : p.b;
@@ -1264,6 +1401,7 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
                 return;
               }
               case "hSL": case "sSL": case "lSL": {
+                if (channel === "hSL") oklchHueRef.current = null;
                 const hsl = rgbToHsl(p.r, p.g, p.b);
                 const h2 = channel === "hSL" ? Number(value) : hsl.h;
                 const s2 = channel === "sSL" ? Number(value) / 100 : hsl.s;
@@ -1279,9 +1417,13 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
               }
               case "L": case "C": case "H": {
                 const cur = rgbToOklch(p.r, p.g, p.b);
+                // For L/C edits, anchor on the user's last stated H so we
+                // don't drift along with chroma changes.
+                const baseH = oklchHueRef.current ?? cur.H;
                 const L = channel === "L" ? Number(value) / 100 : cur.L;
                 const C = channel === "C" ? Number(value) : cur.C;
-                const H = channel === "H" ? Number(value) : cur.H;
+                const H = channel === "H" ? Number(value) : baseH;
+                oklchHueRef.current = H;
                 const rgb = oklchToRgb(clamp01(L), Math.max(0, C), H);
                 const hsvVal = rgbToHsv(rgb.r, rgb.g, rgb.b);
                 updateHsv({
@@ -1308,6 +1450,7 @@ const ColorPicker = forwardRef<HTMLDivElement, ColorPickerProps>(
           />
         )}
       </div>
+      </SurfaceProvider>
     );
   }
 );
@@ -1328,10 +1471,13 @@ type ChannelKey =
 function ColorInputsRow({
   parsed,
   format,
+  oklchHue,
   onChannelChange,
 }: {
   parsed: ParsedColor;
   format: ColorFormat;
+  /** Sticky OKLCH hue override for display (preserves user's stated H across round-trip drift). */
+  oklchHue?: number | null;
   onChannelChange: (key: ChannelKey, value: string) => void;
 }) {
   const alphaPct = Math.round(parsed.a * 100);
@@ -1340,12 +1486,14 @@ function ColorInputsRow({
     const hexNoHash = parsed.hex.replace(/^#/, "").toUpperCase();
     return (
       <div className="grid grid-cols-2 gap-2">
-        <ColorInput
-          value={hexNoHash}
-          onCommit={(next) => onChannelChange("hex", next.startsWith("#") ? next : `#${next}`)}
-          ariaLabel="Hex value"
-          prefix="#"
-        />
+        <ChannelTooltip label="Hex">
+          <ColorInput
+            value={hexNoHash}
+            onCommit={(next) => onChannelChange("hex", next.startsWith("#") ? next : `#${next}`)}
+            ariaLabel="Hex value"
+            prefix="#"
+          />
+        </ChannelTooltip>
         <AlphaInput value={alphaPct} onCommit={(n) => onChannelChange("alphaPercent", String(n))} />
       </div>
     );
@@ -1354,9 +1502,9 @@ function ColorInputsRow({
   if (format === "rgb") {
     return (
       <div className="grid grid-cols-4 gap-1">
-        <ColorInput value={String(parsed.r)} onCommit={(n) => onChannelChange("r", n)} ariaLabel="Red" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
-        <ColorInput value={String(parsed.g)} onCommit={(n) => onChannelChange("g", n)} ariaLabel="Green" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
-        <ColorInput value={String(parsed.b)} onCommit={(n) => onChannelChange("b", n)} ariaLabel="Blue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
+        <ChannelTooltip label="Red"><ColorInput value={String(parsed.r)} onCommit={(n) => onChannelChange("r", n)} ariaLabel="Red" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={255} /></ChannelTooltip>
+        <ChannelTooltip label="Green"><ColorInput value={String(parsed.g)} onCommit={(n) => onChannelChange("g", n)} ariaLabel="Green" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={255} /></ChannelTooltip>
+        <ChannelTooltip label="Blue"><ColorInput value={String(parsed.b)} onCommit={(n) => onChannelChange("b", n)} ariaLabel="Blue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={255} /></ChannelTooltip>
         <AlphaInput value={alphaPct} onCommit={(n) => onChannelChange("alphaPercent", String(n))} />
       </div>
     );
@@ -1366,9 +1514,9 @@ function ColorInputsRow({
     const hsl = rgbToHsl(parsed.r, parsed.g, parsed.b);
     return (
       <div className="grid grid-cols-4 gap-1">
-        <ColorInput value={String(Math.round(hsl.h))} onCommit={(n) => onChannelChange("hSL", n)} ariaLabel="Hue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
-        <ColorInput value={String(Math.round(hsl.s * 100))} onCommit={(n) => onChannelChange("sSL", n)} ariaLabel="Saturation" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
-        <ColorInput value={String(Math.round(hsl.l * 100))} onCommit={(n) => onChannelChange("lSL", n)} ariaLabel="Lightness" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
+        <ChannelTooltip label="Hue"><ColorInput value={String(Math.round(hsl.h))} onCommit={(n) => onChannelChange("hSL", n)} ariaLabel="Hue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={360} wrap /></ChannelTooltip>
+        <ChannelTooltip label="Saturation"><ColorInput value={String(Math.round(hsl.s * 100))} onCommit={(n) => onChannelChange("sSL", n)} ariaLabel="Saturation" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={100} /></ChannelTooltip>
+        <ChannelTooltip label="Lightness"><ColorInput value={String(Math.round(hsl.l * 100))} onCommit={(n) => onChannelChange("lSL", n)} ariaLabel="Lightness" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={100} /></ChannelTooltip>
         <AlphaInput value={alphaPct} onCommit={(n) => onChannelChange("alphaPercent", String(n))} />
       </div>
     );
@@ -1376,33 +1524,46 @@ function ColorInputsRow({
 
   // oklch
   const oklch = rgbToOklch(parsed.r, parsed.g, parsed.b);
+  const displayH = oklchHue ?? oklch.H;
   return (
     <div className="grid grid-cols-4 gap-1">
-      <ColorInput value={(oklch.L * 100).toFixed(0)} onCommit={(n) => onChannelChange("L", n)} ariaLabel="Lightness" align="center" inputMode="decimal" nudgeStep={1} nudgeShiftStep={10} scrubbable />
-      <ColorInput value={oklch.C.toFixed(2)} onCommit={(n) => onChannelChange("C", n)} ariaLabel="Chroma" align="center" inputMode="decimal" nudgeStep={0.01} nudgeShiftStep={0.1} decimals={2} scrubbable />
-      <ColorInput value={oklch.H.toFixed(0)} onCommit={(n) => onChannelChange("H", n)} ariaLabel="Hue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable />
+      <ChannelTooltip label="Lightness"><ColorInput value={(oklch.L * 100).toFixed(0)} onCommit={(n) => onChannelChange("L", n)} ariaLabel="Lightness" align="center" inputMode="decimal" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={100} /></ChannelTooltip>
+      <ChannelTooltip label="Chroma"><ColorInput value={oklch.C.toFixed(2)} onCommit={(n) => onChannelChange("C", n)} ariaLabel="Chroma" align="center" inputMode="decimal" nudgeStep={0.01} nudgeShiftStep={0.1} decimals={2} scrubbable min={0} max={0.4} /></ChannelTooltip>
+      <ChannelTooltip label="Hue"><ColorInput value={displayH.toFixed(0)} onCommit={(n) => onChannelChange("H", n)} ariaLabel="Hue" align="center" inputMode="numeric" nudgeStep={1} nudgeShiftStep={10} scrubbable min={0} max={360} wrap /></ChannelTooltip>
       <AlphaInput value={alphaPct} onCommit={(n) => onChannelChange("alphaPercent", String(n))} />
     </div>
   );
 }
 
+function ChannelTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip content={label} delayDuration={300}>
+      <div>{children}</div>
+    </Tooltip>
+  );
+}
+
 function AlphaInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
   return (
-    <ColorInput
-      value={`${value}%`}
-      onCommit={(input) => {
-        const n = parseFloat(input.replace("%", ""));
-        if (Number.isNaN(n)) return;
-        onCommit(Math.max(0, Math.min(100, Math.round(n))));
-      }}
-      ariaLabel="Alpha"
-      align="center"
-      inputMode="numeric"
-      nudgeStep={1}
-      nudgeShiftStep={10}
-      hasPercent
-      scrubbable
-    />
+    <ChannelTooltip label="Alpha">
+      <ColorInput
+        value={`${value}%`}
+        onCommit={(input) => {
+          const n = parseFloat(input.replace("%", ""));
+          if (Number.isNaN(n)) return;
+          onCommit(Math.max(0, Math.min(100, Math.round(n))));
+        }}
+        ariaLabel="Alpha"
+        align="center"
+        inputMode="numeric"
+        nudgeStep={1}
+        nudgeShiftStep={10}
+        hasPercent
+        scrubbable
+        min={0}
+        max={100}
+      />
+    </ChannelTooltip>
   );
 }
 
@@ -1419,15 +1580,28 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
       triggerShowRemove = false,
       onTriggerRemove,
       triggerClassName,
+      open: openProp,
+      defaultOpen = false,
+      onOpenChange,
       ...pickerProps
     },
     ref
   ) => {
-    const [open, setOpen] = useState(false);
+    const isOpenControlled = openProp !== undefined;
+    const [internalOpen, setInternalOpen] = useState(defaultOpen);
+    const open = isOpenControlled ? openProp : internalOpen;
+    const setOpen: (next: boolean | ((prev: boolean) => boolean)) => void = (next) => {
+      const resolved = typeof next === "function" ? next(open) : next;
+      if (!isOpenControlled) setInternalOpen(resolved);
+      onOpenChange?.(resolved);
+    };
     const triggerRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+    const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null);
     const [rect, setRect] = useState<DOMRect | null>(null);
     const shape = useShape();
+    const substrate = useSurface();
+    const level = Math.min(substrate + 2, 8);
 
     const isControlled = pickerProps.value !== undefined;
     const [internalValue, setInternalValue] = useState(pickerProps.value ?? pickerProps.defaultValue ?? "#ff0000");
@@ -1442,11 +1616,22 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
     );
 
     useEffect(() => {
-      if (open && triggerRef.current) {
-        setRect(triggerRef.current.getBoundingClientRect());
-      } else {
+      if (!open || !triggerRef.current) {
         setRect(null);
+        return;
       }
+      const update = () => {
+        if (triggerRef.current) {
+          setRect(triggerRef.current.getBoundingClientRect());
+        }
+      };
+      update();
+      window.addEventListener("scroll", update, { passive: true, capture: true });
+      window.addEventListener("resize", update);
+      return () => {
+        window.removeEventListener("scroll", update, { capture: true } as EventListenerOptions);
+        window.removeEventListener("resize", update);
+      };
     }, [open]);
 
     useEffect(() => {
@@ -1488,7 +1673,7 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
           aria-haspopup="dialog"
           aria-expanded={open}
           className={cn(
-            "flex items-center gap-2 h-9 px-2 border border-border bg-transparent hover:bg-accent/40 transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
+            "flex items-center gap-2 h-9 px-2 border border-border bg-transparent hover:bg-hover transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[#6B97FF] cursor-pointer",
             shape.input,
             triggerClassName
           )}
@@ -1543,22 +1728,29 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
           >
             <AnimatePresence>
               <motion.div
-                ref={panelRef}
+                ref={(node) => {
+                  (panelRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+                  setPanelEl(node);
+                }}
                 initial={{ opacity: 0, y: -4, scaleY: 0.96 }}
                 animate={{ opacity: 1, y: 0, scaleY: 1 }}
                 exit={{ opacity: 0, y: -4, scaleY: 0.96 }}
                 transition={springs.moderate}
                 style={{ transformOrigin: "top left" }}
               >
-                <ColorPicker
-                  {...pickerProps}
-                  value={currentValue}
-                  onValueChange={onValueChange}
-                  className={cn(
-                    "shadow-[0_4px_12px_rgba(0,0,0,0.02)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]",
-                    pickerProps.className
-                  )}
-                />
+                <ColorPickerPortalContainer value={panelEl}>
+                  <SurfaceProvider value={level}>
+                    <ColorPicker
+                      {...pickerProps}
+                      value={currentValue}
+                      onValueChange={onValueChange}
+                      className={cn(
+                        surfaceClasses(level, 3),
+                        pickerProps.className
+                      )}
+                    />
+                  </SurfaceProvider>
+                </ColorPickerPortalContainer>
               </motion.div>
             </AnimatePresence>
           </div>,
@@ -1578,6 +1770,7 @@ ColorPickerPopover.displayName = "ColorPickerPopover";
 export {
   ColorPicker,
   ColorPickerPopover,
+  ColorPickerPortalContainer,
   ColorSwatch,
   ColorTile,
   parseColor,

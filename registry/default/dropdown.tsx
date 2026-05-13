@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { springs } from "@/lib/springs";
 import { useProximityHover } from "@/hooks/use-proximity-hover";
 import { useShape } from "@/lib/shape-context";
+import { Elevated } from "@/lib/elevated";
 
 interface DropdownContextValue {
   registerItem: (index: number, element: HTMLElement | null) => void;
@@ -64,7 +65,9 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
 
     return (
       <DropdownContext.Provider value={{ registerItem, activeIndex, checkedIndex }}>
-        <div
+        <Elevated
+          offset={2}
+          shadowLevel={3}
           ref={(node) => {
             (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
             if (typeof ref === "function") ref(node);
@@ -113,7 +116,7 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
           }}
           role="menu"
           className={cn(
-            `relative flex flex-col gap-0.5 w-72 max-w-full ${shape.container} bg-card shadow-[0_4px_12px_rgba(0,0,0,0.02)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-border/60 p-1 select-none`,
+            `relative flex flex-col gap-0.5 w-72 max-w-full ${shape.container} p-1 select-none`,
             className
           )}
           {...props}
@@ -122,7 +125,7 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
           <AnimatePresence>
             {checkedRect && (
               <motion.div
-                className={`absolute ${shape.bg} bg-selected/50 dark:bg-accent/40 pointer-events-none`}
+                className={`absolute ${shape.bg} bg-active pointer-events-none`}
                 initial={false}
                 animate={{
                   top: checkedRect.top,
@@ -145,7 +148,7 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
             {activeRect && (
               <motion.div
                 key={sessionRef.current}
-                className={`absolute ${shape.bg} bg-accent/40 dark:bg-accent/25 pointer-events-none`}
+                className={`absolute ${shape.bg} bg-hover pointer-events-none`}
                 initial={{
                   opacity: 0,
                   top: checkedRect?.top ?? activeRect.top,
@@ -191,7 +194,7 @@ const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
           </AnimatePresence>
 
           {children}
-        </div>
+        </Elevated>
       </DropdownContext.Provider>
     );
   }

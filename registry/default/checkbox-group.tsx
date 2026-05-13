@@ -152,7 +152,7 @@ const CheckboxGroup = forwardRef<HTMLDivElement, CheckboxGroupProps>(
           }}
           role="group"
           className={cn(
-            "relative flex flex-col gap-0.5 w-72 max-w-full select-none",
+            "relative flex flex-col w-72 max-w-full select-none",
             className
           )}
           {...props}
@@ -171,7 +171,7 @@ const CheckboxGroup = forwardRef<HTMLDivElement, CheckboxGroupProps>(
               return (
                 <motion.div
                   key={`group-${group.id}`}
-                  className={`absolute ${shape.mergedBg} bg-selected/50 dark:bg-accent/40 pointer-events-none`}
+                  className={`absolute ${shape.mergedBg} bg-active pointer-events-none`}
                   initial={false}
                   animate={{
                     top: mergedTop,
@@ -195,7 +195,7 @@ const CheckboxGroup = forwardRef<HTMLDivElement, CheckboxGroupProps>(
             {activeRect && (
               <motion.div
                 key={sessionRef.current}
-                className={`absolute ${shape.bg} bg-accent/40 dark:bg-accent/25 pointer-events-none`}
+                className={`absolute ${shape.bg} bg-hover pointer-events-none`}
                 initial={{
                   opacity: 0,
                   top: activeRect.top,
@@ -295,7 +295,7 @@ const CheckboxItem = forwardRef<HTMLDivElement, CheckboxItemProps>(
           }
         }}
         className={cn(
-          `relative z-10 flex items-center gap-2.5 ${shape.item} px-3 py-2 cursor-pointer outline-none`,
+          `relative z-10 flex items-center gap-2.5 ${shape.item} px-3 py-1.5 cursor-pointer outline-none`,
           className
         )}
         {...props}
@@ -306,7 +306,7 @@ const CheckboxItem = forwardRef<HTMLDivElement, CheckboxItemProps>(
           onCheckedChange={() => onToggle()}
           tabIndex={-1}
           aria-hidden
-          className="relative w-[18px] h-[18px] shrink-0 appearance-none bg-transparent p-0 border-0 outline-none cursor-pointer"
+          className="relative w-[15px] h-[15px] shrink-0 appearance-none bg-transparent p-0 border-0 outline-none cursor-pointer"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Border */}
@@ -333,7 +333,7 @@ const CheckboxItem = forwardRef<HTMLDivElement, CheckboxItemProps>(
                   strokeWidth={2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="absolute inset-0 text-foreground"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground"
                   initial={{ opacity: 1 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 1 }}

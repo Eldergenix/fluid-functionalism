@@ -287,7 +287,7 @@ const TabsList = forwardRef<HTMLDivElement, TabsListProps>(
           {selectedRect && (
             <motion.div
               className={cn(
-                "absolute pointer-events-none bg-background shadow-sm dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "absolute pointer-events-none bg-surface-4 shadow-surface-4",
                 shape.bg
               )}
               initial={false}
@@ -310,7 +310,7 @@ const TabsList = forwardRef<HTMLDivElement, TabsListProps>(
             {hoverRect && !isHoveringSelected && selectedRect && (
               <motion.div
                 className={cn(
-                  "absolute pointer-events-none bg-accent/40 dark:bg-accent/25",
+                  "absolute pointer-events-none bg-hover",
                   shape.bg
                 )}
                 initial={{

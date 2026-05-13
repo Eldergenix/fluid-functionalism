@@ -130,7 +130,7 @@ const RadioGroup = forwardRef<HTMLDivElement, RadioGroupProps>(
         }}
         role="radiogroup"
         className={cn(
-          "relative flex flex-col gap-0.5 w-72 max-w-full select-none",
+          "relative flex flex-col w-72 max-w-full select-none",
           className
         )}
         {...props}
@@ -138,7 +138,7 @@ const RadioGroup = forwardRef<HTMLDivElement, RadioGroupProps>(
         {/* Selected background */}
         {selectedRect && (
           <motion.div
-            className={`absolute ${shape.bg} bg-selected/50 dark:bg-accent/40 pointer-events-none`}
+            className={`absolute ${shape.bg} bg-active pointer-events-none`}
             initial={false}
             animate={{
               top: selectedRect.top,
@@ -159,7 +159,7 @@ const RadioGroup = forwardRef<HTMLDivElement, RadioGroupProps>(
           {activeRect && (
             <motion.div
               key={sessionRef.current}
-              className={`absolute ${shape.bg} bg-accent/40 dark:bg-accent/25 pointer-events-none`}
+              className={`absolute ${shape.bg} bg-hover pointer-events-none`}
               initial={{
                 opacity: 0,
                 top: activeRect.top,
@@ -311,13 +311,13 @@ const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
           }
         }}
         className={cn(
-          `relative z-10 flex items-center gap-2.5 ${shape.item} px-3 py-2 cursor-pointer outline-none`,
+          `relative z-10 flex items-center gap-2.5 ${shape.item} px-3 py-1.5 cursor-pointer outline-none`,
           className
         )}
         {...props}
       >
         {/* Radio circle */}
-        <div className="relative w-[18px] h-[18px] shrink-0">
+        <div className="relative w-[15px] h-[15px] shrink-0">
           {/* Border */}
           <div
             className={cn(

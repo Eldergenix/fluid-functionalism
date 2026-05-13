@@ -15,6 +15,7 @@ import {
   CheckboxGroup,
   CheckboxItem,
 } from "@/registry/default/checkbox-group";
+import { ColorPicker, ColorPickerPortalContainer } from "@/registry/default/color-picker";
 import {
   Dialog,
   DialogTrigger,
@@ -388,18 +389,18 @@ function TabsPreview() {
 }
 
 function TabsSubtlePreview() {
-  const SquareLibrary = useIcon("square-library");
-  const Clock = useIcon("clock");
-  const Star = useIcon("star");
+  const Home = useIcon("home");
+  const MessageCircle = useIcon("message-circle");
+  const Inbox = useIcon("inbox");
   const [tab, setTab] = useState(0);
   const items = [
-    { icon: SquareLibrary, label: "Library" },
-    { icon: Clock, label: "Recents" },
-    { icon: Star, label: "Favorites" },
+    { icon: Home, label: "Home" },
+    { icon: MessageCircle, label: "Chat" },
+    { icon: Inbox, label: "Inbox" },
   ];
   return (
-    <div className="w-full max-w-[360px]">
-      <TabsSubtle idPrefix="bento-tabs" selectedIndex={tab} onSelect={setTab} aria-label="Navigation">
+    <div className="w-fit mx-auto">
+      <TabsSubtle idPrefix="bento-tabs" selectedIndex={tab} onSelect={setTab} activeLabel aria-label="Navigation">
         {items.map((item, i) => (
           <TabsSubtleItem key={item.label} index={i} icon={item.icon} label={item.label} />
         ))}
@@ -459,11 +460,27 @@ function TooltipPreview() {
   );
 }
 
+function ColorPickerPreview() {
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  return (
+    <div
+      ref={setContainer}
+      className="w-full max-w-[280px]"
+      style={{ transform: "scale(0.7)", transformOrigin: "center" }}
+    >
+      <ColorPickerPortalContainer value={container}>
+        <ColorPicker defaultValue="#3b82f6" />
+      </ColorPickerPortalContainer>
+    </div>
+  );
+}
+
 export const previewMap: Record<string, React.FC> = {
   accordion: AccordionPreview,
   badge: BadgePreview,
   button: ButtonPreview,
   "checkbox-group": CheckboxPreview,
+  "color-picker": ColorPickerPreview,
   dialog: DialogPreview,
   dropdown: DropdownPreview,
   "input-copy": InputCopyPreview,
